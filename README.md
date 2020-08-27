@@ -1,7 +1,7 @@
 <center><img src="https://i.imgur.com/nMJp1oA.png"/></center>
 
 # credit
-* buck#0001 - insperation for most of this.
+* buck#0001 - inspiration for most of this.
 
 # nasa-patch
 
