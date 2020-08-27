@@ -9,3 +9,17 @@ This project allows you to patch your kernel only in a specific process. It is h
 with this project/library! This software is provided as-is, I have no plans on updating this code (except to add 2mb page support)... 
 
 If you are interested in how this code works you can read about it here: [https://back.engineering/post/nasa-patch/](https://back.engineering/post/nasa-patch/).
+
+# example
+
+```cpp
+	nasa::mem_ctx my_proc(kernel, GetCurrentProcessId());
+	nasa::patch_ctx kernel_patch(&my_proc);
+
+	const auto function_addr =
+		reinterpret_cast<void*>(
+			util::get_module_export("win32kbase.sys", "NtDCompositionRetireFrame"));
+
+	const auto new_patch_page = kernel_patch.patch(function_addr);
+	std::cout << "[+] new_patch_page: " << new_patch_page << std::endl;
+	*(short*)new_patch_page = 0xDEAD;
