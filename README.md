@@ -1,8 +1,5 @@
 <center><img src="https://i.imgur.com/nMJp1oA.png"/></center>
 
-# credit
-* buck#0001 - inspiration for most of this.
-
 # PSKP (Process-Context Specific Kernel Patches)
 
 This project allows you to patch your kernel only in a specific process. It is highly experimental and will most likely cause your system to crash. Please install some form of virtualization before messing around
@@ -24,3 +21,6 @@ If you are interested in how this code works you can read about it here: [https:
 	std::cout << "[+] new_patch_page: " << new_patch_page << std::endl;
 	*(short*)new_patch_page = 0xDEAD; // this patch will only be viewable inside of your context...
 ```
+
+# credit
+* buck#0001 - inspiration for most of this
