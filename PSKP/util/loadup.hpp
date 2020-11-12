@@ -29,17 +29,16 @@
 #include <string>
 #include <fstream>
 #include <filesystem>
-#include <iostream>
 
 #pragma comment(lib, "ntdll.lib")
-using nt_load_driver_t = NTSTATUS(__fastcall*)(PUNICODE_STRING);
-using nt_unload_driver_t = NTSTATUS(__fastcall*)(PUNICODE_STRING);
+extern "C" NTSTATUS NtLoadDriver(PUNICODE_STRING);
+extern "C" NTSTATUS NtUnloadDriver(PUNICODE_STRING);
 
 namespace driver
 {
 	namespace util
 	{
-		inline bool delete_service_entry(const std::string& service_name)
+		__forceinline auto delete_service_entry(const std::string& service_name) -> bool
 		{
 			HKEY reg_handle;
 			static const std::string reg_key("System\\CurrentControlSet\\Services\\");
@@ -50,10 +49,11 @@ namespace driver
 				&reg_handle
 			);
 
-			return ERROR_SUCCESS == RegDeleteKeyA(reg_handle, service_name.data()) && ERROR_SUCCESS == RegCloseKey(reg_handle);
+			return ERROR_SUCCESS == RegDeleteKeyA(reg_handle, service_name.data()) &&
+				ERROR_SUCCESS == RegCloseKey(reg_handle);;
 		}
 
-		inline bool create_service_entry(const std::string& drv_path, const std::string& service_name)
+		__forceinline auto create_service_entry(const std::string& drv_path, const std::string& service_name) -> bool
 		{
 			HKEY reg_handle;
 			std::string reg_key("System\\CurrentControlSet\\Services\\");
@@ -68,10 +68,7 @@ namespace driver
 			if (result != ERROR_SUCCESS)
 				return false;
 
-			//
-			// set type to 1 (kernel)
-			//
-			constexpr std::uint8_t type_value = 1;
+			std::uint8_t type_value = 1;
 			result = RegSetValueExA(
 				reg_handle,
 				"Type",
@@ -84,10 +81,7 @@ namespace driver
 			if (result != ERROR_SUCCESS)
 				return false;
 
-			//
-			// set error control to 3
-			//
-			constexpr std::uint8_t error_control_value = 3;
+			std::uint8_t error_control_value = 3;
 			result = RegSetValueExA(
 				reg_handle,
 				"ErrorControl",
@@ -100,10 +94,7 @@ namespace driver
 			if (result != ERROR_SUCCESS)
 				return false;
 
-			//
-			// set start to 3
-			//
-			constexpr std::uint8_t start_value = 3;
+			std::uint8_t start_value = 3;
 			result = RegSetValueExA(
 				reg_handle,
 				"Start",
@@ -116,9 +107,6 @@ namespace driver
 			if (result != ERROR_SUCCESS)
 				return false;
 
-			//
-			// set image path to the driver on disk
-			//
 			result = RegSetValueExA(
 				reg_handle,
 				"ImagePath",
@@ -134,8 +122,7 @@ namespace driver
 			return ERROR_SUCCESS == RegCloseKey(reg_handle);
 		}
 
-		// this function was coded by paracord: https://githacks.org/snippets/4#L94 
-		inline bool enable_privilege(const std::wstring& privilege_name)
+		__forceinline auto enable_privilege(const std::wstring& privilege_name) -> bool
 		{
 			HANDLE token_handle = nullptr;
 			if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token_handle))
@@ -157,7 +144,7 @@ namespace driver
 			return true;
 		}
 
-		inline std::string get_service_image_path(const std::string& service_name)
+		__forceinline auto get_service_image_path(const std::string& service_name) -> std::string
 		{
 			HKEY reg_handle;
 			DWORD bytes_read;
@@ -185,36 +172,27 @@ namespace driver
 		}
 	}
 
-	inline bool load(const std::string& drv_path, const std::string& service_name)
+	__forceinline auto load(const std::string& drv_path, const std::string& service_name) -> bool
 	{
 		if (!util::enable_privilege(L"SeLoadDriverPrivilege"))
 			return false;
 
-		if (!util::create_service_entry("\\??\\" + std::filesystem::absolute(std::filesystem::path(drv_path)).string(), service_name))
+		if (!util::create_service_entry("\\??\\" +
+			std::filesystem::absolute(std::filesystem::path(drv_path)).string(), service_name))
 			return false;
 
 		std::string reg_path("\\Registry\\Machine\\System\\CurrentControlSet\\Services\\");
 		reg_path += service_name;
 
-		static const auto lp_nt_load_drv =
-			::GetProcAddress(
-				GetModuleHandleA("ntdll.dll"),
-				"NtLoadDriver"
-			);
+		ANSI_STRING driver_rep_path_cstr;
+		UNICODE_STRING driver_reg_path_unicode;
 
-		if (lp_nt_load_drv)
-		{
-			ANSI_STRING driver_rep_path_cstr;
-			UNICODE_STRING driver_reg_path_unicode;
-
-			RtlInitAnsiString(&driver_rep_path_cstr, reg_path.c_str());
-			RtlAnsiStringToUnicodeString(&driver_reg_path_unicode, &driver_rep_path_cstr, true);
-			return ERROR_SUCCESS == reinterpret_cast<nt_load_driver_t>(lp_nt_load_drv)(&driver_reg_path_unicode);
-		}
-		return false;
+		RtlInitAnsiString(&driver_rep_path_cstr, reg_path.c_str());
+		RtlAnsiStringToUnicodeString(&driver_reg_path_unicode, &driver_rep_path_cstr, true);
+		return ERROR_SUCCESS == NtLoadDriver(&driver_reg_path_unicode);
 	}
 
-	inline std::tuple<bool, std::string> load(const std::vector<std::uint8_t>& drv_buffer)
+	__forceinline auto load(const std::vector<std::uint8_t>& drv_buffer) -> std::tuple<bool, std::string>
 	{
 		static const auto random_file_name = [](std::size_t length) -> std::string
 		{
@@ -234,68 +212,45 @@ namespace driver
 
 		const auto service_name = random_file_name(16);
 		const auto file_path = std::filesystem::temp_directory_path().string() + service_name;
+		std::ofstream output_file(file_path.c_str(), std::ios::binary);
 
-		const auto h_file = CreateFileA(
-			file_path.data(),
-			GENERIC_ALL,
-			NULL, NULL,
-			CREATE_ALWAYS,
-			FILE_ATTRIBUTE_NORMAL,
-			NULL
-		);
+		output_file.write((char*)drv_buffer.data(), drv_buffer.size());
+		output_file.close();
 
-		DWORD bytes_written;
-		WriteFile(
-			h_file,
-			drv_buffer.data(),
-			drv_buffer.size(), 
-			&bytes_written, 
-			NULL
-		);
-
-		CloseHandle(h_file);
 		return { load(file_path, service_name), service_name };
 	}
 
-	inline std::tuple<bool, std::string> load(const std::uint8_t* buffer, const std::size_t size)
+	__forceinline auto load(const std::uint8_t* buffer, const std::size_t size) -> std::tuple<bool, std::string>
 	{
 		std::vector<std::uint8_t> image(buffer, buffer + size);
 		return load(image);
 	}
 
-	inline bool unload(const std::string& service_name)
+	__forceinline auto unload(const std::string& service_name) -> bool
 	{
 		std::string reg_path("\\Registry\\Machine\\System\\CurrentControlSet\\Services\\");
 		reg_path += service_name;
 
-		static const auto lp_nt_unload_drv =
-			::GetProcAddress(
-				GetModuleHandleA("ntdll.dll"),
-				"NtUnloadDriver"
-			);
+		ANSI_STRING driver_rep_path_cstr;
+		UNICODE_STRING driver_reg_path_unicode;
 
-		if (lp_nt_unload_drv)
+		RtlInitAnsiString(&driver_rep_path_cstr, reg_path.c_str());
+		RtlAnsiStringToUnicodeString(&driver_reg_path_unicode, &driver_rep_path_cstr, true);
+
+		const bool unload_drv = STATUS_SUCCESS == NtUnloadDriver(&driver_reg_path_unicode);
+		const auto image_path = std::filesystem::temp_directory_path().string() + service_name;
+		const bool delete_reg = util::delete_service_entry(service_name);
+
+		// sometimes you cannot delete the driver off disk because there are still handles open
+		// to the driver, this means the driver is still loaded into the kernel...
+		try
 		{
-			ANSI_STRING driver_rep_path_cstr;
-			UNICODE_STRING driver_reg_path_unicode;
-
-			RtlInitAnsiString(&driver_rep_path_cstr, reg_path.c_str());
-			RtlAnsiStringToUnicodeString(&driver_reg_path_unicode, &driver_rep_path_cstr, true);
-
-			const bool unload_drv = !reinterpret_cast<nt_unload_driver_t>(lp_nt_unload_drv)(&driver_reg_path_unicode);
-			const auto image_path = util::get_service_image_path(service_name);
-			const bool delete_reg = util::delete_service_entry(service_name);
-
-			try 
-			{
-				const bool delete_drv = std::filesystem::remove(image_path);
-			} catch(std::exception& e)
-			{
-				std::cerr << "[!] failed to delete image: " << e.what() << std::endl;
-			}
-
-			return unload_drv && delete_reg;
+			std::filesystem::remove(image_path);
 		}
-		return false;
+		catch (std::exception& e)
+		{
+			return false;
+		}
+		return delete_reg && unload_drv;
 	}
 }
